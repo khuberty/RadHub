@@ -3,7 +3,7 @@ from typing import Dict, Optional, List
 from pathlib import Path
 from contextlib import contextmanager
 
-import os, shutil, tempfile, json
+import os, shutil, tempfile, json, datetime
 
 
 @dataclass
@@ -162,4 +162,17 @@ class RadianceProject:
         if category not in self.dirs:
             raise ValueError(f"Category not found: {category}")
         
-        return list(self.dirs[category].glob(pattern))
+        return list(self.dirs[category].glob(pattern))\
+            
+    def create_dated_subdir(self, category: str) -> Path:
+        
+        if category not in self.dir:
+            raise ValueError(f"Unknown category: {category}")
+        
+        date_str = datetime.now().strftime('%Y-%m-%d')
+        subdir = self.dirs[category] / date_str
+        subdir.mkdir(exist_ok=True)
+        
+        return subdir
+    
+    
