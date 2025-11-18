@@ -1,6 +1,10 @@
 from dataclasses import dataclass
 from typing import Dict, Optional, List
 from pathlib import Path
+from contextlib import contextmanager
+
+import os, shutil, tempfile, json
+
 
 @dataclass
 class ProjectConfig:
@@ -8,14 +12,14 @@ class ProjectConfig:
     # --- Configuration settings for pyRadiance rendering project ---
     
     name: str
-    descirption: str = ""
+    description: str = ""
     
     latitude: float = 37.79
-    longitude: float = -122.41
-    timezone: str = "America/Los_Angeles"
+    longitude: float = 122.41
+    timezone: float = 120
     
     default_resolution: tuple[int, int] = (1000, 1000)
-    default_quality: str = "medium"
+    default_quality: str = "Medium"
     
     create_dated_subdirs: bool = True
     keep_intermediate_files: bool = False
@@ -93,3 +97,69 @@ class RadianceProject:
             import json
             json.dump(self.config.to_dict(), f, indent=2)
             
+    @classmethod
+    def load(cls, project_dir: Path | str) -> 'RadianceProject':
+        
+        root = Path(project_dir).resolve()
+        config_path = root / 'config.json'
+        
+        if not config_path.exists():
+            raise FileNotFoundError(
+                f"No config.json found in {root}. "
+            )
+            
+        with open(config_path, 'r') as f:
+            config_data = json.load(f)
+            
+        config = ProjectConfig.from_dict(config_data)
+        return cls(root, config, create_if_missing=False)
+      
+    # --- Helper Scripts ---  
+      
+    def get_path(self, category: str, filename: str) -> Path:
+        if category not in self.dirs:
+            raise ValueError(
+                f"Unknown category '{category}'. "
+                f"Valid categories: {list(self.dirs.keys())}"
+            )
+        return self.dirs[category] / filename
+    
+    @contextmanager
+    def temp_files(self, suffix: str = '', prefix: str = 'tmp') -> Path:
+        fd, path = tempfile.mkstemp(
+            suffix=suffix,
+            prefix=prefix,
+            dir=self.dirs['temp']
+        )
+        
+        temp_path = Path(path)
+
+        if not self.config.keep_intermediate_files:
+            self._temp_resource.append(temp_path)
+            
+        try:
+            yield temp_path
+        finally:
+            try:
+                os.close(fd)
+            except:
+                pass
+    
+    def cleanup_temp_files(self) -> None:
+        for resource in reversed(self._temp_resource):
+            try:
+                if resource.exists():
+                    if resource.is_file():
+                        resource.unlink()
+                    elif resource.is_dir():
+                        shutil.rmtree(resource)    
+            except:
+                print(f"This temp file no longer exists: {resource}")
+            
+        self._temp_resource.clear()
+        
+    def list_resources(self, category: str, pattern: str = "*") -> List[str]:
+        if category not in self.dirs:
+            raise ValueError(f"Category not found: {category}")
+        
+        return list(self.dirs[category].glob(pattern))
