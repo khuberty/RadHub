@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Generator
 from pathlib import Path
 from contextlib import contextmanager
 
@@ -125,7 +125,7 @@ class RadianceProject:
         return self.dirs[category] / filename
     
     @contextmanager
-    def temp_files(self, suffix: str = '', prefix: str = 'tmp') -> Path:
+    def temp_files(self, suffix: str = '', prefix: str = 'tmp') -> Generator[Path, None, None]:
         fd, path = tempfile.mkstemp(
             suffix=suffix,
             prefix=prefix,
@@ -175,4 +175,9 @@ class RadianceProject:
         
         return subdir
     
-    
+    def set_location(self, latitude: float, longitude: float, timezone: float) -> None:
+        self.config.latitude = latitude
+        self.config.longitude = longitude
+        if timezone is not None:
+            if abs(longitude - timezone) < 15: self.config.timezone = timezone
+            else: raise ValueError("Timezone must be within 15 degrees of longitude.")
