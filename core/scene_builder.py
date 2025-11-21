@@ -1,6 +1,9 @@
 import pyradiance as pr
 from pathlib import Path
-from typing import List, Union
+from typing import List, Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .radiance_project import RadianceProject
 
 class SceneBuilder:
     """
@@ -11,20 +14,21 @@ class SceneBuilder:
     2. Building sky octrees (base + sky) - fast, done per frame
     """
     
-    def __init__(self, scene_id: str, output_dir: Union[str, Path]):
+    def __init__(self, project: 'RadianceProject', scene_id: str = "scene"):
         """
         Initialize the SceneBuilder.
         
         Args:
-            scene_id: Unique identifier for this scene (e.g., "building_v1")
-            output_dir: Directory where octree files will be saved
+            project: RadianceProject object containing configuration and directory structure
+            scene_id: Optional identifier for this scene (default: "scene")
         """
+        self.project = project
         self.scene_id = scene_id
-        self.output_dir = Path(output_dir)
+        self.output_dir = project.dirs['octrees']
         self.geometry_files: List[Path] = []
         self.material_files: List[Path] = []
         
-        # Ensure output directory exists
+        # Ensure output directory exists (should already exist from project)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def add_geometry(self, *files: Union[str, Path]):
@@ -52,28 +56,7 @@ class SceneBuilder:
         
         print(f"Building base octree: {output_path}...")
         
-        # Use pyradiance Scene class for convenience if available, 
-        # or fallback to oconv directly. 
-        # Based on pyradiance_anim.py, pr.Scene is used.
-        
         try:
-            scene = pr.Scene(
-                self.scene_id,
-                surfaces=surf_files,
-                materials=mat_files
-            )
-            # We need to control the output path, but pr.Scene might default to something.
-            # Let's check if we can just use oconv directly for more control, 
-            # or if pr.Scene is better. 
-            # In pyradiance_anim.py:
-            # base_scene = pr.Scene("base_scene", surfaces=..., materials=...)
-            # base_scene.build()
-            # return base_scene.octree
-            
-            # Let's stick to oconv for explicit control over output path and inputs
-            # unless we want to use the Scene object features.
-            # Using oconv directly is often safer for custom paths.
-            
             # Combine all inputs
             all_inputs = mat_files + surf_files
             
@@ -117,16 +100,11 @@ class SceneBuilder:
             else:
                 final_sky = sky_definition
 
-            # Combine sky with base octree using oconv -i (frozen octree)
-            # Note: pyradiance oconv wrapper might handle stdin/octree args
-            
-            # In pyradiance_anim.py:
-            # pr.oconv(stdin=..., octree=base_octree)
-            
+            # Combine sky with base octree using oconv
             octree_bytes = pr.oconv(
                 stdin=final_sky,
                 octree=str(base_octree),
-                warning=True # Suppress warnings if needed, or pass True to see them
+                warning=True
             )
             
             with open(output_path, "wb") as f:
