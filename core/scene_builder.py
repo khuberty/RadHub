@@ -1,6 +1,7 @@
 import pyradiance as pr
 from pathlib import Path
 from typing import List, Union, TYPE_CHECKING
+import re
 
 if TYPE_CHECKING:
     from .radiance_project import RadianceProject
@@ -40,6 +41,75 @@ class SceneBuilder:
         """Add material (.mat or .rad) files to the scene."""
         for f in files:
             self.material_files.append(Path(f))
+
+    def convert_obj_to_rad(self, obj_path: Union[str, Path], add_to_scene: bool = True) -> tuple[str, str]:
+        """
+        Convert an OBJ file to RAD and MAT files if they don't already exist.
+        
+        Args:
+            obj_path: Path to the OBJ file to convert
+            add_to_scene: If True, automatically add the generated files to this scene (default: True)
+            
+        Returns:
+            Tuple of (rad_file_path, mat_file_path)
+            
+        Note:
+            This function will skip conversion if both .rad and .mat files already exist,
+            making it safe to call repeatedly in scripts without regenerating files.
+        """
+        # --- basic error protection ---
+        obj_path = Path(obj_path).resolve()
+        if not obj_path.exists():
+            raise FileNotFoundError(f"OBJ file not found: {obj_path}")
+        
+        # --- create file names ---
+        base = obj_path.with_suffix("")
+        rad_file = str(base) + ".rad"
+        mat_file = str(base) + ".mat"
+        
+        # Check if files already exist
+        if Path(rad_file).exists() and Path(mat_file).exists():
+            print(f"✓ RAD files already exist for {obj_path.name}, skipping conversion")
+        else:
+            print(f"Converting {obj_path.name} to RAD format...")
+            
+            # Convert OBJ to RAD
+            rad_bytes = pr.obj2rad(str(obj_path))
+            Path(rad_file).write_bytes(rad_bytes)
+
+            # --- get group names ---
+            groups = []
+            seen = set()
+            with obj_path.open("r", errors="ignore") as f:
+                for line in f:
+                    if line.strip().startswith("g "):
+                        name = line.strip().split(maxsplit=1)[1]
+                        if name not in seen:
+                            seen.add(name)
+                            groups.append(name)
+
+            # --- sanitize names for radiance ---
+            def sanitize(name: str) -> str:
+                return re.sub(r"[^A-Za-z0-9_.-]", "_", name)
+
+            # --- write mat file ---
+            with open(mat_file, "w", encoding="utf-8") as f:
+                if not groups:
+                    f.write("void plastic default_layer\n0\n0\n5 0.5 0.5 0.5 0 0\n")
+                else:
+                    for g in groups:
+                        safe_name = sanitize(g)
+                        f.write(f"void plastic {safe_name}\n0\n0\n5 0.5 0.5 0.5 0 0\n\n")
+            
+            print(f"✓ Created {Path(rad_file).name} and {Path(mat_file).name}")
+        
+        # Optionally add to scene
+        if add_to_scene:
+            self.add_geometry(rad_file)
+            self.add_materials(mat_file)
+            print(f"✓ Added files to scene")
+        
+        return rad_file, mat_file
 
     def build_base_octree(self) -> Path:
         """
